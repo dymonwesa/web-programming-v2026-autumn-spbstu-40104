@@ -7,12 +7,16 @@ import {
   groupEventsByParticipantCount,
 } from './model.js';
 
-const storageKey = 'smirnov.dmitriy.lab4.events';
+const STORAGE_KEY = 'events';
 
 const eventForm = document.querySelector('[data-testid="entity-form"]');
+
 const eventList = document.querySelector('[data-testid="entity-list"]');
+
 const template = document.querySelector('#event-template');
+
 const message = document.querySelector('[data-testid="message"]');
+
 const filterStatus = document.querySelector('[data-testid="filter-status"]');
 
 const participantSearchForm = document.querySelector(
@@ -40,14 +44,15 @@ let visibleEvents = [...events];
 
 function loadEvents() {
   try {
-    const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
 
     if (!Array.isArray(saved)) {
       return [];
     }
 
     return saved.map(
-      (item) => new Event(item.id, item.title, item.participants, item.date),
+      (item) =>
+        new Event(item.id, item.title, item.participants || [], item.date),
     );
   } catch {
     return [];
@@ -55,7 +60,7 @@ function loadEvents() {
 }
 
 function saveEvents() {
-  localStorage.setItem(storageKey, JSON.stringify(events));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
 }
 
 function runAsync(callback) {
@@ -67,27 +72,27 @@ function runAsync(callback) {
 }
 
 function renderStatistics() {
-  uniqueParticipants.replaceChildren();
+  uniqueParticipants.textContent =
+    getUniqueParticipants(events).join(', ') || 'Нет';
+
   dateGroups.replaceChildren();
   countGroups.replaceChildren();
 
-  getUniqueParticipants(events).forEach((name) => {
-    const item = document.createElement('li');
-    item.textContent = name;
-    uniqueParticipants.append(item);
-  });
-
   Object.entries(groupEventsByDate(events)).forEach(([date, items]) => {
-    const item = document.createElement('li');
-    item.textContent = `${date}: ${items.length}`;
-    dateGroups.append(item);
+    const listItem = document.createElement('li');
+
+    listItem.textContent = `${date}: ${items.length}`;
+
+    dateGroups.append(listItem);
   });
 
   Object.entries(groupEventsByParticipantCount(events)).forEach(
     ([count, items]) => {
-      const item = document.createElement('li');
-      item.textContent = `${count} участников: ${items.length}`;
-      countGroups.append(item);
+      const listItem = document.createElement('li');
+
+      listItem.textContent = `${count} участников: ${items.length}`;
+
+      countGroups.append(listItem);
     },
   );
 }
@@ -100,23 +105,32 @@ function render() {
 
     const card = fragment.querySelector('[data-testid="entity-card"]');
 
-    card.querySelector('.title').textContent = item.title;
-    card.querySelector('.id').textContent = item.id;
-    card.querySelector('.date').textContent = item.date;
-    card.querySelector('.count').textContent = item.participantCount;
+    card.querySelector('.event-title').textContent = item.title;
+
+    card.querySelector('.event-id').textContent = item.id;
+
+    card.querySelector('.event-date').textContent = item.date;
+
+    card.querySelector('.event-count').textContent = item.participantCount;
 
     const participantsList = card.querySelector('.participants');
 
     item.participants.forEach((name) => {
       const listItem = document.createElement('li');
-      listItem.textContent = `${name} `;
+
+      const participantName = document.createElement('span');
+
+      participantName.textContent = name;
 
       const removeButton = document.createElement('button');
+
       removeButton.type = 'button';
       removeButton.textContent = 'Удалить участника';
 
       removeButton.addEventListener('click', async () => {
-        await runAsync(() => item.removeParticipant(name));
+        await runAsync(() => {
+          item.removeParticipant(name);
+        });
 
         saveEvents();
         renderAll();
@@ -124,50 +138,50 @@ function render() {
         message.textContent = 'Участник удалён';
       });
 
-      listItem.append(removeButton);
+      listItem.append(participantName, removeButton);
+
       participantsList.append(listItem);
     });
 
-    card
-      .querySelector('.participant-form')
-      .addEventListener('submit', async (submitEvent) => {
-        submitEvent.preventDefault();
+    const participantForm = card.querySelector('.participant-form');
 
-        const input = submitEvent.currentTarget.elements.participant;
-        const name = input.value.trim();
+    participantForm.addEventListener('submit', async (submitEvent) => {
+      submitEvent.preventDefault();
 
-        if (!name) {
-          return;
-        }
+      const input = participantForm.elements.participant;
 
-        const added = await runAsync(() => item.addParticipant(name));
+      const name = input.value.trim();
 
-        saveEvents();
-        renderAll();
+      if (!name) {
+        return;
+      }
 
-        message.textContent = added
-          ? 'Участник добавлен'
-          : 'Такой участник уже есть';
+      const added = await runAsync(() => item.addParticipant(name));
 
-        input.value = '';
+      saveEvents();
+      renderAll();
+
+      message.textContent = added
+        ? 'Участник добавлен'
+        : 'Такой участник уже существует';
+
+      input.value = '';
+    });
+
+    const deleteButton = card.querySelector('[data-testid="delete-entity"]');
+
+    deleteButton.addEventListener('click', async () => {
+      await runAsync(() => {
+        events = events.filter((event) => event.id !== item.id);
+
+        visibleEvents = visibleEvents.filter((event) => event.id !== item.id);
       });
 
-    card
-      .querySelector('[data-testid="delete-entity"]')
-      .addEventListener('click', async () => {
-        await runAsync(() => {
-          events = events.filter((current) => current.id !== item.id);
+      saveEvents();
+      renderAll();
 
-          visibleEvents = visibleEvents.filter(
-            (current) => current.id !== item.id,
-          );
-        });
-
-        saveEvents();
-        renderAll();
-
-        message.textContent = 'Мероприятие удалено';
-      });
+      message.textContent = 'Мероприятие удалено';
+    });
 
     eventList.append(fragment);
   });
@@ -184,15 +198,18 @@ eventForm.addEventListener('submit', async (submitEvent) => {
 
   const id = Number(eventForm.elements.id.value);
   const title = eventForm.elements.title.value.trim();
+
   const date = eventForm.elements.date.value;
 
   if (!Number.isInteger(id) || id <= 0 || !title || !date) {
     message.textContent = 'Заполни все поля корректно';
+
     return;
   }
 
   if (events.some((item) => item.id === id)) {
     message.textContent = 'Мероприятие с таким ID уже существует';
+
     return;
   }
 
@@ -231,7 +248,8 @@ monthSearchForm.addEventListener('submit', (submitEvent) => {
   const month = Number(monthSearchForm.elements.month.value);
 
   if (!Number.isInteger(month) || month < 1 || month > 12) {
-    message.textContent = 'Укажи месяц от 1 до 12';
+    message.textContent = 'Выбери месяц от 1 до 12';
+
     return;
   }
 
