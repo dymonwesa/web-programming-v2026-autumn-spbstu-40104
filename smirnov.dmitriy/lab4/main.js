@@ -64,9 +64,14 @@ function saveEvents() {
 }
 
 function runAsync(callback) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     setTimeout(() => {
-      resolve(callback());
+      try {
+        const result = callback();
+        resolve(result);
+      } catch (error) {
+        reject(error);
+      }
     }, 100);
   });
 }
